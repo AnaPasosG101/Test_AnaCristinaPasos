@@ -1,0 +1,131 @@
+/****** Creo una vista de los datos donde agrego campo Fecha  ******/
+CREAtE VIEW vw_adevinta as
+SELECT [uuid]
+	  ,[timestamp]
+      ,CAST(cast(floor([timestamp]/1000000) as char(8))AS DATE) as fecha
+      ,[session_id]
+      ,[group] 
+      ,[action]
+      ,cast(case when [checkin] ='NA' THEN NULL else [checkin] end as int) as [checkin]
+      ,[page_id]
+      ,[n_results]
+      ,[result_position]
+  FROM [CoinRecords].[dbo].[events_log]
+
+/*¨Creo vista con Métricas a nivel de grupo y total*/
+/*Esta tabla se usa en la hoja de excel SQL Métricas*/
+CREAtE VIEW vw_analisis_exploratorio as
+/*Visión General*/
+select a.*
+		/*Incluyo métricas por sesión*/
+		,cast(cant_page_no_busquedas as float)/cast(cant_sesiones as float) as Pag_sesion
+		,cast(cant_page_con_checkin as float)/cast(cant_sesiones as float) as Pag_sesion_tiempo
+		,cast(visitPage as float)/cast(cant_sesiones as float) as visitPage_sesion
+		,cast(searchResultPage as float)/cast(cant_sesiones as float) as Busquedas_sesion
+		,cast(searchResultPage_zero as float)/cast(cant_sesiones as float) as Busquedas_Zero_sesion
+		,cast(searchResultPage_Exito as float)/cast(cant_sesiones as float) as Busquedas_Exito_sesion
+from 
+(
+select fecha , 'Total' as [group] 
+		,count(distinct session_id) as cant_sesiones
+		,count(distinct (case when action='visitPage' then page_id else null end )) as cant_page_no_busquedas
+		,count(distinct (case when action='checkin' then page_id else null end )) as cant_page_con_checkin
+		,sum(case when action='visitPage' then 1 else 0 end ) as visitPage
+		,sum(case when action='searchResultPage' then 1 else 0 end ) as searchResultPage
+		,sum(case when action='searchResultPage' and n_results=0 then 1 else 0 end ) as searchResultPage_zero
+		,sum(case when action='searchResultPage' and n_results>=1 then 1 else 0 end ) as searchResultPage_Exito
+from vw_adevinta group by fecha) as a
+union
+/*Visión por Grupos*/
+select a.*
+		/*Incluyo métricas por sesión*/
+		,cast(cant_page_no_busquedas as float)/cast(cant_sesiones as float) as Pag_sesion
+		,cast(cant_page_con_checkin as float)/cast(cant_sesiones as float) as Pag_sesion_tiempo
+		,cast(visitPage as float)/cast(cant_sesiones as float) as visitPage_sesion
+		,cast(searchResultPage as float)/cast(cant_sesiones as float) as Busquedas_sesion
+		,cast(searchResultPage_zero as float)/cast(cant_sesiones as float) as Busquedas_Zero_sesion
+		,cast(searchResultPage_Exito as float)/cast(cant_sesiones as float) as Busquedas_Exito_sesion
+from 
+(
+select fecha,[group] 
+		,count(distinct session_id) as cant_sesiones
+		,count(distinct (case when action='visitPage' then page_id else null end )) as cant_page_no_busquedas
+		,count(distinct (case when action='checkin' then page_id else null end )) as cant_page_con_checkin
+		,sum(case when action='visitPage' then 1 else 0 end ) as visitPage
+		,sum(case when action='searchResultPage' then 1 else 0 end ) as searchResultPage
+		,sum(case when action='searchResultPage' and n_results=0 then 1 else 0 end ) as searchResultPage_zero
+		,sum(case when action='searchResultPage' and n_results>=1 then 1 else 0 end ) as searchResultPage_Exito
+from vw_adevinta group by fecha,[group]) as a;
+
+
+/*---------------2. Which results do people tend to try first? How does it change day-to-day?-----------------------------------*/
+/*Estas tablas se usan en la hoja de excel 2) SQL People tend*/
+
+/*Obtengo la primer 'visitPage' por sesión y construyo la frecuencia del result_position */
+select fecha,result_position,[group],count(distinct [session_id]) as sesiones
+from 
+(SELECT	a.*, 
+	RANK () OVER ( partition BY fecha,[session_id]
+		ORDER BY [timestamp] asc
+	) _rank 
+FROM vw_adevinta as a
+ WHERE ACTION='visitPage'
+) as a
+ where _rank=1
+ group by fecha,result_position,[group];
+
+ /*Obtengo frecuencia de páginas visitadas por sesión */
+ select fecha,[group],count([session_id]) as cant_seciones,cant_pag
+ from
+ (
+ select fecha,[session_id],[group],
+	count( distinct case when action='visitPage' then page_id else null end) as cant_pag
+ FROM vw_adevinta as aç
+ group by fecha,[session_id],[group]
+ ) as a
+ group by fecha,[group],cant_pag;
+
+/*Obtengo frecuencia de búsquedas por sesión */
+ select fecha,[group],count([session_id]) as cant_seciones,cant_busquedas
+ from
+ (
+ select fecha,[session_id],[group],
+	count( distinct case when action='searchResultPage' then page_id else null end) as cant_busquedas 
+ FROM vw_adevinta as aç
+ group by fecha,[session_id],[group]
+ ) as a
+ group by fecha,[group],cant_busquedas;
+
+
+ /*---------------3. What is our daily overall zero results rate? How does it vary between the groups?---------------------------*/
+/*Esta tabla se usa en la hoja de excel 3) SQL zero results rate*/
+
+select fecha,[group],sum(case when n_results=0 then 1 else 0 end ) as casos_zero,
+	   sum(case when n_results='NA' then 1 else 0 end ) as casos_null,
+	   sum(case when n_results>0 then 1 else 0 end ) as casos_exito,
+	   count(*) as total_busquedas
+from vw_adevinta 
+where ACTION='searchResultPage'
+GROUP BY fecha,[group]
+union
+select fecha,'Todos' as [group],sum(case when n_results=0 then 1 else 0 end ) as casos_zero,
+	   sum(case when n_results='NA' then 1 else 0 end ) as casos_null,
+	   sum(case when n_results>0 then 1 else 0 end ) as casos_exito,
+	   count(*) as total_busquedas
+from vw_adevinta 
+where ACTION='searchResultPage'
+GROUP BY fecha
+;
+
+/*4. Let *session length* be approximately the time between the first event and the last event in a session. Choose a variable from the dataset and describe its relationship to session length. Visualize the relationship.*/
+/*Esta tabla se usa en la hoja de excel 4) SQL Let  session length */
+
+/*Tiempo de duracion por sesion*/
+select fecha,session_id,[group],max([checkin]) as [checkin],
+DATEDIFF (second, min(convert(datetime, stuff(stuff(stuff([timestamp], 9, 0, ' '), 12, 0, ':'), 15, 0, ':'))),max(convert(datetime, stuff(stuff(stuff([timestamp], 9, 0, ' '), 12, 0, ':'), 15, 0, ':')))) As Segundos
+from vw_adevinta group by fecha,session_id,[group]
+UNION
+select fecha,session_id,'Todos' AS [group], Max([checkin]) as [checkin],
+DATEDIFF (second, min(convert(datetime, stuff(stuff(stuff([timestamp], 9, 0, ' '), 12, 0, ':'), 15, 0, ':'))),max(convert(datetime, stuff(stuff(stuff([timestamp], 9, 0, ' '), 12, 0, ':'), 15, 0, ':')))) As Segundos
+from vw_adevinta group by fecha,session_id;
+

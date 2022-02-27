@@ -1,0 +1,6 @@
+El repositorio contiene los siguientes documentos:
+
+-Analisis de Datos.xls , Este documento contiene los análisis realizados con el dataset events_log enviado con la explicación del caso a desarrollar
+-sql.txt, este documento contiene las consultas en SQL para obtener los datos requeridos para los análisis que se desarrollaron en el excel Analisis de Datos.xls
+-Presentación, es un power point que contiene la presentación ejecutiva a presentar el próximo martes
+-RESUMEN EJECUTIVO DATA ANALYSIS TASK, este word contiene el resumen ejecutivo con los resultados y conclusiones más importantes
